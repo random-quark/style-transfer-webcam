@@ -1,6 +1,9 @@
 from __future__ import print_function
 from __future__ import division
 
+import imagezmq
+import socket
+from imutils.video import VideoStream
 import os
 import pdb
 import vgg
@@ -12,6 +15,7 @@ import numpy as np
 import argparse
 import sys
 sys.path.insert(0, 'src')
+
 
 face_cascade = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
 
@@ -37,12 +41,13 @@ models_all = [{"ckpt": "models/ckpt_cubist_b20_e4_cw05/fns.ckpt", "style": "styl
 
 models = [
     {"ckpt": "models/ckpt_kandinsky_b20_e4_cw05/fns.ckpt",
-     "style": "styles/kandinsky2.jpg"}, # not bad, quite plain
-    {"ckpt": "models/ckpt_wu_b20_e4_cw15/fns.ckpt", "style": "styles/wu4.jpg"}, # cool!
+     "style": "styles/kandinsky2.jpg"},  # not bad, quite plain
+    {"ckpt": "models/ckpt_wu_b20_e4_cw15/fns.ckpt",
+        "style": "styles/wu4.jpg"},  # cool!
     {"ckpt": "models/ckpt_elsalahi_b20_e4_cw05/fns.ckpt",
      "style": "styles/elsalahi2.jpg"},  # nice
     {"ckpt": "models/ckpt_liechtenstein_b20_e4_cw15/fns.ckpt",
-        "style": "styles/liechtenstein.jpg"}, # quite good
+        "style": "styles/liechtenstein.jpg"},  # quite good
 
     {"ckpt": "models/ckpt_cubist_b20_e4_cw05/fns.ckpt",
      "style": "styles/cubist-landscape-justineivu-geanina.jpg"},  # not bad
@@ -92,16 +97,21 @@ def get_camera_shape(cam):
 
 
 def create_faces_mask(original_image, buffer):
+    def maprange(a, b, s):
+        (a1, a2), (b1, b2) = a, b
+        return b1 + ((s - a1) * (b2 - b1) / (a2 - a1))
     gray_original_image = cv2.cvtColor(original_image, cv2.COLOR_BGR2GRAY)
     shape = (original_image.shape[0], original_image.shape[1], 1)
     mask = np.full(shape, 0, dtype=np.uint8)
     faces = face_cascade.detectMultiScale(gray_original_image, 1.3, 5)
     face_areas = []
     for (x, y, w, h) in faces:
+        print("Current size", h)
+        blending_value = maprange([50, 200], [0, 255], h)
         face_areas.append(([x, y, w, h], original_image[y:y+h, x:x+w]))
         center = (x + w // 2, y + h // 2)
         radius = max(h, w) // 2 + buffer
-        cv2.circle(mask, center, radius, (255), -1)
+        cv2.circle(mask, center, radius, (blending_value), -1)
         mask = blur(mask, 50)
     return mask
 
@@ -187,13 +197,21 @@ def main(device_id, width, disp_width, disp_source, horizontal, num_sec):
             oh, ow, _ = composite.shape
             composite = cv2.resize(
                 composite, (disp_width, int(oh * disp_width / ow)))
-            cv2.imshow('frame', composite)
+            # cv2.imshow('frame', composite)
+            # key_ = cv2.waitKey(1)
 
-            key_ = cv2.waitKey(1)
+            send_video(composite)
 
         # done
         cam.release()
         cv2.destroyAllWindows()
+
+
+sender = imagezmq.ImageSender(connect_to="tcp://127.0.0.1:5555")
+
+
+def send_video(frame):
+    sender.send_image('computer_1', frame)
 
 
 if __name__ == '__main__':
